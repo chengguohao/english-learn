@@ -1,7 +1,7 @@
 import './style.css';
 import './words-data.js';
 import { loadWords, loadState, saveState, loadSettings, saveSettings, addHistory } from './store.js';
-import { review, buildQueue, streakDays, calendarData, todayStr, DAY } from './srs.js';
+import { review, buildQueue, streakDays, todayStr, DAY } from './srs.js';
 import { speak, ONLINE_VOICES, setOnlineVoice, getOnlineVoice } from './tts.js';
 import { ensurePermission, setDailyReminder } from './notify.js';
 import { ROOTS } from './roots-data.js';
@@ -10,6 +10,7 @@ import { PHRASES } from './phrases-data.js';
 // ====== 全局状态 ======
 let WORDS = [];
 let shuffledWords = []; // 打乱后的词库（与单词本一致的学习顺序）
+let shuffledPhrases = []; // 每日打乱的短语顺序
 let state = { cards: {}, history: {} };
 let settings = loadSettings();
 // 初始化在线语音选择（验证语音 ID 是否有效，清除旧的失效 ID）
@@ -48,6 +49,8 @@ let drillStats = { again: 0, hard: 0, good: 0 };
 let learnedWordsFilter = 'today';
 // 词根词缀状态
 let rootFilter = 'all';
+// 学习日历当前显示月份
+let calendarMonth = new Date();
 
 const $ = (sel) => document.querySelector(sel);
 const app = $('#app');
@@ -56,12 +59,42 @@ const app = $('#app');
 async function init() {
   WORDS = await loadWords();
   shuffledWords = initShuffledWords(WORDS);
+  shuffledPhrases = initShuffledPhrases();
   state = loadState();
   settings = loadSettings();
   applyTheme();
   render();
   // 预加载语音列表
   if (window.speechSynthesis) window.speechSynthesis.getVoices();
+}
+
+/** 每日打乱短语顺序（同一天一致，第二天重新打乱） */
+function initShuffledPhrases() {
+  if (!PHRASES.length) return [];
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const cacheKey = 'pets3_phrases_shuffle_' + today;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const indices = JSON.parse(cached);
+      if (Array.isArray(indices) && indices.length === PHRASES.length) {
+        return indices.map(i => PHRASES[i]).filter(Boolean);
+      }
+    }
+  } catch (e) { /* ignore */ }
+  // Fisher-Yates 打乱
+  const indices = PHRASES.map((_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  try { localStorage.setItem(cacheKey, JSON.stringify(indices)); } catch (e) { /* ignore */ }
+  // 清理旧缓存
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('pets3_phrases_shuffle_'));
+    keys.forEach(k => { if (k !== cacheKey) localStorage.removeItem(k); });
+  } catch (e) { /* ignore */ }
+  return indices.map(i => PHRASES[i]);
 }
 
 /** 初始化打乱词库顺序（持久化到 localStorage，保证每次一致） */
@@ -94,7 +127,20 @@ function findRootsForWord(word) {
 }
 
 // ====== 路由 ======
+let navStack = [];
+
+/** 离开生活短语页时清理状态 */
+function cleanupPhrases() {
+  if (phraseAutoTimer) {
+    clearTimeout(phraseAutoTimer);
+    phraseAutoTimer = null;
+  }
+  document.body.classList.remove('phrases-fullscreen');
+}
+
 function navigate(view) {
+  if (currentView === 'phrases' && view !== 'phrases') cleanupPhrases();
+  navStack.push(currentView);
   prevView = currentView;
   currentView = view;
   render();
@@ -105,20 +151,28 @@ function goBack() {
   // 学习页面：处理拼写中间状态
   if (currentView === 'learn') {
     if (postSpellActive && !postSpellChecked) {
-      // 拼写输入阶段：取消拼写，回到卡片状态，重置评分
       postSpellActive = false;
       currentRated = false;
       renderLearn();
       return;
     }
     if (postSpellActive && postSpellChecked) {
-      // 拼写结果阶段：前进到下一个单词
       advanceQueue();
       return;
     }
   }
-  // 正常后退
-  currentView = prevView || 'home';
+  if (currentView === 'phrases') cleanupPhrases();
+  // 正常后退：从导航栈弹出
+  currentView = navStack.pop() || 'home';
+  prevView = navStack.length ? navStack[navStack.length - 1] : 'home';
+  render();
+}
+
+/** 直接回首页（清空导航栈） */
+function goHome() {
+  if (currentView === 'phrases') cleanupPhrases();
+  navStack = [];
+  currentView = 'home';
   prevView = 'home';
   render();
 }
@@ -141,6 +195,15 @@ function render() {
 }
 
 // ====== 首页 ======
+function getTimeGreeting() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 11) return '早上好';
+  if (h >= 11 && h < 13) return '中午好';
+  if (h >= 13 && h < 17) return '下午好';
+  if (h >= 17 && h < 19) return '傍晚好';
+  return '晚上好';
+}
+
 function renderHome() {
   const q = buildQueue(state.cards, shuffledWords, settings.newPerDay);
   const todayLearned = state.history[todayStr()] || 0;
@@ -157,6 +220,7 @@ function renderHome() {
     </div>
     <div class="page">
       <div class="home-header">
+        <div class="greeting">${getTimeGreeting()} 👋 今天也是进步一点点的一天</div>
         <div class="slogan">公共英语三级 · PETS-3 词汇 ${WORDS.length} 词</div>
       </div>
 
@@ -176,23 +240,23 @@ function renderHome() {
       </div>
 
       <div class="quick-actions">
-        <div class="quick-btn" onclick="App.nav('phrases')">
-          <div class="icon">✨</div><div class="name">生活短语</div><div class="desc">每日一句 · 赏心悦目</div>
+        <div class="quick-btn" onclick="App.nav('wordbook')">
+          <div class="icon">📖</div><div class="name">单词本</div><div class="desc">全部 ${WORDS.length} 词</div>
+        </div>
+        <div class="quick-btn" onclick="App.nav('mistakes')">
+          <div class="icon">📝</div><div class="name">错词本</div><div class="desc">${mistakeCount} 个错词</div>
         </div>
         <div class="quick-btn" onclick="App.nav('roots')">
           <div class="icon">🧩</div><div class="name">词根词缀</div><div class="desc">构词法拆解</div>
         </div>
-        <div class="quick-btn" onclick="App.nav('plan')">
-          <div class="icon">🎯</div><div class="name">学习计划</div><div class="desc">设定目标 · 进度</div>
-        </div>
-        <div class="quick-btn" onclick="App.nav('wordbook')">
-          <div class="icon">📖</div><div class="name">单词本</div><div class="desc">全部 ${WORDS.length} 词</div>
-        </div>
         <div class="quick-btn" onclick="App.nav('stats')">
           <div class="icon">📊</div><div class="name">学习统计</div><div class="desc">打卡 · 记忆持久度</div>
         </div>
-        <div class="quick-btn" onclick="App.nav('mistakes')">
-          <div class="icon">📝</div><div class="name">错词本</div><div class="desc">${mistakeCount} 个错词</div>
+        <div class="quick-btn" onclick="App.nav('plan')">
+          <div class="icon">🎯</div><div class="name">学习计划</div><div class="desc">设定目标 · 进度</div>
+        </div>
+        <div class="quick-btn" onclick="App.nav('phrases')">
+          <div class="icon">✨</div><div class="name">生活短语</div><div class="desc">每日一句 · 赏心悦目</div>
         </div>
       </div>
     </div>
@@ -478,7 +542,7 @@ function renderWordFamily(family) {
 function renderLearnDone() {
   const todayLearned = state.history[todayStr()] || 0;
   app.innerHTML = `
-    <div class="topbar"><button class="btn" onclick="App.nav('home')">←</button><div class="title">学习完成</div><button class="btn" onclick="App.nav('home')">✕</button></div>
+    <div class="topbar"><button class="btn" onclick="App.goHome()">←</button><div class="title">学习完成</div><button class="btn" onclick="App.goHome()">✕</button></div>
     <div class="page" style="text-align:center; padding-top:80px;">
       <div style="font-size:64px;">🎉</div>
       <h2 style="margin:16px 0 8px;">今日学习完成！</h2>
@@ -644,7 +708,7 @@ function renderMistakes() {
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">错词本 <span style="font-size:12px; color:var(--text-2);">${mistakes.length} 词</span></div>
       <div></div>
     </div>
@@ -918,7 +982,7 @@ function renderLearnedWords() {
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">${pageTitle} <span style="font-size:12px; color:var(--text-2);">${words.length} 词</span></div>
       <div></div>
     </div>
@@ -998,7 +1062,7 @@ function renderWordbook(filter = '') {
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">单词本 <span style="font-size:12px; color:var(--text-2);">${learnedCount}/${WORDS.length}</span></div>
       <button class="btn" onclick="App.reshuffleWords()" title="重新打乱顺序">🔀</button>
     </div>
@@ -1043,94 +1107,129 @@ function renderStats() {
   const learned = Object.values(state.cards).filter(c => c.state === 2).length;
   const learning = total - learned;
   const streak = streakDays(state.history);
-  const cal = calendarData(state.history, 70);
   const mistakeCount = Object.values(state.cards).filter(c => (c.lapses || 0) > 0).length;
-  // 最近7天
-  const last7 = [];
-  for (let i = 6; i >= 0; i--) {
+
+  // 记忆持久度
+  const avgProficiency = total ? Math.round(Object.values(state.cards).reduce((s, c) => s + (c.interval ? Math.min(100, c.interval * 5 + 20 - (c.lapses || 0) * 10) : 10), 0) / total) : 0;
+
+  // 最近30天折线图数据（今天在左，30天前在右）
+  const dailyTarget = settings.newPerDay || 20;
+  const lineData = [];
+  for (let i = 0; i <= 29; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const ts = todayStr(d);
-    last7.push({ label: '日一二三四五六'[d.getDay()], count: state.history[ts] || 0, date: ts });
+    lineData.push({ date: ts, count: state.history[ts] || 0 });
   }
-  const max7 = Math.max(1, ...last7.map(x => x.count));
-  const total7 = last7.reduce((s, x) => s + x.count, 0);
-  const avg7 = total7 > 0 ? (total7 / 7).toFixed(1) : '0';
-  const avgProficiency = total ? Math.round(Object.values(state.cards).reduce((s, c) => s + (c.interval ? Math.min(100, c.interval * 5 + 20 - (c.lapses || 0) * 10) : 10), 0) / total) : 0;
+  const maxCount = Math.max(dailyTarget, ...lineData.map(x => x.count));
+
+  // 日历数据：当前月份
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth();
+  const today = todayStr();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startWeekday = firstDay.getDay(); // 0=周日
+  const daysInMonth = lastDay.getDate();
+  const monthName = `${year}年${month + 1}月`;
+  const calCells = [];
+  // 前置空白
+  for (let i = 0; i < startWeekday; i++) calCells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ts = todayStr(new Date(year, month, day));
+    calCells.push({ date: ts, day, count: state.history[ts] || 0, isToday: ts === today });
+  }
+  const canGoPrev = new Date(year, month, 1) > new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const canGoNext = new Date(year, month, 1) < new Date();
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">学习统计</div>
       <div></div>
     </div>
     <div class="page">
-      <div class="stat-block">
-        <h3>累计数据</h3>
-        <div class="stat-grid">
-          <div class="stat-cell"><div class="num" style="color:var(--green)">${total}</div><div class="label">累计学词</div></div>
-          <div class="stat-cell"><div class="num" style="color:var(--primary)">${learning}</div><div class="label">学习中</div></div>
-          <div class="stat-cell"><div class="num" style="color:var(--orange)">${learned}</div><div class="label">已掌握</div></div>
-          <div class="stat-cell"><div class="num">${streak}</div><div class="label">连续打卡</div></div>
-        </div>
-      </div>
-
-      <!-- 错词本入口 -->
-      <div class="mistake-entry ${mistakeCount > 0 ? 'has-mistakes' : ''}" onclick="App.nav('mistakes')">
-        <div class="me-left">
-          <div class="me-icon">📝</div>
-          <div class="me-info">
-            <div class="me-title">错词本</div>
-            <div class="me-desc">${mistakeCount > 0 ? `${mistakeCount} 个错词待复习` : '暂无错词，继续保持！'}</div>
+      <!-- 累计数据 + 错词本 一行 -->
+      <div class="stat-row-combined">
+        <div class="stat-block stat-block-inline">
+          <div class="stat-grid stat-grid-4">
+            <div class="stat-cell"><div class="num" style="color:var(--green)">${total}</div><div class="label">累计</div></div>
+            <div class="stat-cell"><div class="num" style="color:var(--primary)">${learning}</div><div class="label">学习中</div></div>
+            <div class="stat-cell"><div class="num" style="color:var(--orange)">${learned}</div><div class="label">已掌握</div></div>
+            <div class="stat-cell"><div class="num">${streak}</div><div class="label">连续打卡</div></div>
           </div>
         </div>
-        <div class="me-arrow">›</div>
+        <div class="mistake-entry ${mistakeCount > 0 ? 'has-mistakes' : ''}" onclick="App.nav('mistakes')">
+          <div class="me-text-block">
+            <div class="me-title">错词本</div>
+            <div class="me-desc">${mistakeCount > 0 ? `${mistakeCount} 个` : '暂无'}</div>
+          </div>
+        </div>
       </div>
 
+      <!-- 记忆持久度 -->
       <div class="stat-block">
         <div class="sb-header">
-          <h3>最近 7 天</h3>
-          <span class="sb-summary">日均 ${avg7} 词</span>
+          <h3>记忆持久度</h3>
+          <span class="sb-summary">${avgProficiency}%</span>
         </div>
-        <div class="bar-chart">
-          <div class="bc-grid">
-            <div class="bc-grid-line" style="bottom:100%"></div>
-            <div class="bc-grid-line" style="bottom:75%"></div>
-            <div class="bc-grid-line" style="bottom:50%"></div>
-            <div class="bc-grid-line" style="bottom:25%"></div>
+        <div class="proficiency-formula">
+          <div class="pf-line">P = min(100, 间隔天数 × 5 + 20 − 遗忘次数 × 10)</div>
+          <div class="pf-desc">间隔天数：单词当前复习间隔 · 遗忘次数：复习时答错的次数</div>
+        </div>
+        <div class="line-chart-container">
+          <svg class="line-chart" viewBox="0 0 300 120" preserveAspectRatio="none">
+            <!-- Y轴目标线 -->
+            <line class="lc-target-line" x1="0" y1="${120 - (dailyTarget / maxCount) * 100}" x2="300" y2="${120 - (dailyTarget / maxCount) * 100}" />
+            <!-- 网格线 -->
+            <line class="lc-grid-line" x1="0" y1="0" x2="300" y2="0" />
+            <line class="lc-grid-line" x1="0" y1="30" x2="300" y2="30" />
+            <line class="lc-grid-line" x1="0" y1="60" x2="300" y2="60" />
+            <line class="lc-grid-line" x1="0" y1="90" x2="300" y2="90" />
+            <!-- 折线 -->
+            <polyline class="lc-line" points="${lineData.map((x, i) => {
+              const px = (i / (lineData.length - 1)) * 300;
+              const py = 120 - (x.count / maxCount) * 100;
+              return `${px.toFixed(1)},${py.toFixed(1)}`;
+            }).join(' ')}" />
+            <!-- 数据点 -->
+            ${lineData.map((x, i) => {
+              const px = (i / (lineData.length - 1)) * 300;
+              const py = 120 - (x.count / maxCount) * 100;
+              return `<circle class="lc-dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.5" />`;
+            }).join('')}
+            <!-- 填充区域 -->
+            <polygon class="lc-area" points="${lineData.map((x, i) => {
+              const px = (i / (lineData.length - 1)) * 300;
+              const py = 120 - (x.count / maxCount) * 100;
+              return `${px.toFixed(1)},${py.toFixed(1)}`;
+            }).join(' ')} 300,120 0,120" />
+          </svg>
+          <div class="lc-labels">
+            <span class="lc-label-y">目标 ${dailyTarget}</span>
+            <span class="lc-label-x">今天</span>
+            <span class="lc-label-x">30 天前</span>
           </div>
-          ${last7.map((x, i) => {
-            const h = Math.max(4, (x.count / max7) * 100);
-            const isToday = i === last7.length - 1;
-            return `
-            <div class="bc-col">
-              <div class="bc-value">${x.count || ''}</div>
-              <div class="bc-bar-wrap">
-                <div class="bc-bar ${isToday ? 'today' : ''} ${x.count === 0 ? 'empty' : ''}" style="height:${h}%">
-                  <div class="bc-bar-top"></div>
-                </div>
-              </div>
-              <div class="bc-label">${x.label}</div>
-            </div>`;
-          }).join('')}
         </div>
       </div>
 
+      <!-- 学习日历（单月） -->
       <div class="stat-block">
-        <h3>学习日历（近 70 天）</h3>
+        <div class="sb-header">
+          <h3>${monthName}</h3>
+          <div class="cal-nav">
+            <button class="cal-arrow ${!canGoPrev ? 'disabled' : ''}" onclick="App.calPrevMonth()">‹</button>
+            <button class="cal-arrow ${!canGoNext ? 'disabled' : ''}" onclick="App.calNextMonth()">›</button>
+          </div>
+        </div>
+        <div class="calendar-weekdays">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
         <div class="calendar">
-          ${cal.map(d => {
-            const level = d.count === 0 ? 0 : d.count < 10 ? 1 : d.count < 30 ? 2 : d.count < 60 ? 3 : 4;
-            const isToday = d.date === todayStr();
-            return `<div class="day l${level} ${isToday ? 'today' : ''}" title="${d.date}：${d.count} 词">${d.date.slice(8)}</div>`;
+          ${calCells.map(c => {
+            if (!c) return '<div class="day empty"></div>';
+            const level = c.count === 0 ? 0 : c.count < dailyTarget * 0.5 ? 1 : c.count < dailyTarget ? 2 : c.count < dailyTarget * 1.5 ? 3 : 4;
+            return `<div class="day l${level} ${c.isToday ? 'today' : ''}" title="${c.date}：${c.count} 词">${c.day}</div>`;
           }).join('')}
-        </div>
-      </div>
-
-      <div class="stat-block">
-        <h3>记忆持久度</h3>
-        <div style="text-align:center; padding:10px 0;">
-          <div style="font-size:44px; font-weight:800; color:var(--primary);">${avgProficiency}%</div>
-          <div style="font-size:13px; color:var(--text-2); margin-top:4px;">基于复习间隔与遗忘次数估算</div>
         </div>
       </div>
     </div>
@@ -1156,7 +1255,7 @@ function renderRoots() {
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">词根词缀 <span style="font-size:12px; color:var(--text-2);">${ROOTS.length} 条</span></div>
       <div></div>
     </div>
@@ -1268,7 +1367,7 @@ function renderPlan() {
 
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">学习计划</div>
       <div></div>
     </div>
@@ -1382,12 +1481,19 @@ function setExamDate(v) {
 function renderSettings() {
   app.innerHTML = `
     <div class="topbar">
-      <button class="btn" onclick="App.nav('home')">←</button>
+      <button class="btn" onclick="App.goBack()">←</button>
       <div class="title">设置</div>
       <div></div>
     </div>
     <div class="page">
       <div class="setting-group">
+        <div class="setting-item">
+          <span class="label">界面风格</span>
+          <select onchange="App.setTheme(this.value)">
+            <option value="classic" ${settings.theme !== 'playful' ? 'selected' : ''}>经典（蓝色扁平）</option>
+            <option value="playful" ${settings.theme === 'playful' ? 'selected' : ''}>趣味（橙色圆润）</option>
+          </select>
+        </div>
         <div class="setting-item">
           <span class="label">学习模式</span>
           <select onchange="App.setLearnMode(this.value)">
@@ -1451,54 +1557,127 @@ function renderSettings() {
 }
 
 // ====== 生活短语 ======
+let phraseAutoTimer = null;
+const phrasePreloaded = new Set();
+
+/** 预加载图片，避免切换时闪烁 */
+function preloadPhraseImage(idx) {
+  if (idx < 0 || idx >= shuffledPhrases.length || phrasePreloaded.has(idx)) return;
+  phrasePreloaded.add(idx);
+  const img = new Image();
+  img.src = shuffledPhrases[idx].img;
+}
+
+/** 首次进入：完整渲染页面骨架 */
 function renderPhrases() {
-  const p = PHRASES[phraseIndex] || PHRASES[0];
-  const moodLabels = { funny: '😂 搞笑', poetic: '🌙 诗意', life: '🌿 生活', inspirational: '🔥 励志' };
+  const p = shuffledPhrases[phraseIndex] || shuffledPhrases[0];
   const fontClasses = { rounded: 'font-rounded', sharp: 'font-sharp', elegant: 'font-elegant' };
   const fontClass = fontClasses[p.font] || 'font-rounded';
 
+  // 全屏模式：移除 #app 的 max-width 限制
+  document.body.classList.add('phrases-fullscreen');
+
   app.innerHTML = `
-    <div class="phrase-fullscreen ${fontClass}" style="background-image: url('${p.img}'), ${p.gradient};">
+    <div class="phrase-fullscreen ${fontClass}" id="phraseStage" style="background-image: url('${p.img}'), ${p.gradient};">
       <div class="phrase-overlay"></div>
       <div class="phrase-topbar">
-        <button class="phrase-back" onclick="App.nav('home')">←</button>
-        <span class="phrase-counter">${phraseIndex + 1} / ${PHRASES.length}</span>
-        <button class="phrase-close" onclick="App.nav('home')">✕</button>
+        <button class="phrase-back" onclick="App.goHome()">←</button>
+        <span class="phrase-counter" id="phraseCounter">${phraseIndex + 1} / ${shuffledPhrases.length}</span>
+        <button class="phrase-close" onclick="App.goHome()">✕</button>
       </div>
-      <div class="phrase-body">
-        <div class="phrase-mood-tag">${moodLabels[p.mood] || ''}</div>
-        <div class="phrase-en-large" onclick="App.speakSentence('${p.en.replace(/'/g, "\\'")}')">${p.en}</div>
-        <div class="phrase-cn-large">${p.cn}</div>
+      <div class="phrase-body" id="phraseBody">
+        <div class="phrase-en-large" id="phraseEn" onclick="App.speakPhraseEn()">${p.en}</div>
+        <div class="phrase-cn-large" id="phraseCn">${p.cn}</div>
         <div class="phrase-tap-hint">🔊 点击英文朗读</div>
       </div>
-      <div class="phrase-bottom">
-        <button class="phrase-nav-btn" onclick="App.prevPhrase()" ${phraseIndex === 0 ? 'disabled' : ''}>‹</button>
-        <div class="phrase-dots-inline">
-          ${PHRASES.map((_, i) => `<span class="pd ${i === phraseIndex ? 'active' : ''}" onclick="App.setPhraseIndex(${i})"></span>`).join('')}
-        </div>
-        <button class="phrase-nav-btn" onclick="App.nextPhrase()" ${phraseIndex === PHRASES.length - 1 ? 'disabled' : ''}>›</button>
-      </div>
+      <button class="phrase-nav-btn prev" onclick="App.prevPhrase()" id="phrasePrev" ${phraseIndex === 0 ? 'disabled' : ''}>‹</button>
+      <button class="phrase-nav-btn next" onclick="App.nextPhrase()" id="phraseNext" ${phraseIndex === shuffledPhrases.length - 1 ? 'disabled' : ''}>›</button>
     </div>
   `;
+
+  // 预加载相邻图片
+  preloadPhraseImage(phraseIndex + 1);
+  preloadPhraseImage(phraseIndex + 2);
+  preloadPhraseImage(phraseIndex - 1);
+
+  startPhraseAutoTimer();
+}
+
+/** 启动自动滚动定时器 */
+function startPhraseAutoTimer() {
+  if (phraseAutoTimer) clearTimeout(phraseAutoTimer);
+  phraseAutoTimer = setTimeout(() => {
+    if (phraseIndex < shuffledPhrases.length - 1) {
+      nextPhrase();
+    } else {
+      phraseIndex = 0;
+      updatePhraseContent();
+    }
+  }, 15000);
+}
+
+/** 切换短语内容（不重建 DOM，仅更新内容 + 淡入淡出过渡） */
+function updatePhraseContent() {
+  const stage = document.getElementById('phraseStage');
+  const body = document.getElementById('phraseBody');
+  const enEl = document.getElementById('phraseEn');
+  const cnEl = document.getElementById('phraseCn');
+  const counter = document.getElementById('phraseCounter');
+  const prevBtn = document.getElementById('phrasePrev');
+  const nextBtn = document.getElementById('phraseNext');
+  if (!stage || !body) { renderPhrases(); return; }
+
+  const p = shuffledPhrases[phraseIndex] || shuffledPhrases[0];
+  const fontClasses = { rounded: 'font-rounded', sharp: 'font-sharp', elegant: 'font-elegant' };
+  const fontClass = fontClasses[p.font] || 'font-rounded';
+
+  // 文字淡出
+  body.classList.add('phrase-fading');
+
+  setTimeout(() => {
+    // 更新背景（图片已预加载，不会闪烁）
+    stage.className = `phrase-fullscreen ${fontClass}`;
+    stage.style.backgroundImage = `url('${p.img}'), ${p.gradient}`;
+    // 更新文字
+    enEl.textContent = p.en;
+    cnEl.textContent = p.cn;
+    counter.textContent = `${phraseIndex + 1} / ${shuffledPhrases.length}`;
+    // 更新按钮状态
+    prevBtn.disabled = phraseIndex === 0;
+    nextBtn.disabled = phraseIndex === shuffledPhrases.length - 1;
+    // 预加载相邻
+    preloadPhraseImage(phraseIndex + 1);
+    preloadPhraseImage(phraseIndex + 2);
+    preloadPhraseImage(phraseIndex - 1);
+    // 文字淡入
+    body.classList.remove('phrase-fading');
+    startPhraseAutoTimer();
+  }, 250);
 }
 
 function nextPhrase() {
-  if (phraseIndex < PHRASES.length - 1) {
+  if (phraseIndex < shuffledPhrases.length - 1) {
     phraseIndex++;
-    renderPhrases();
+    updatePhraseContent();
   }
 }
 
 function prevPhrase() {
   if (phraseIndex > 0) {
     phraseIndex--;
-    renderPhrases();
+    updatePhraseContent();
   }
 }
 
 function setPhraseIndex(i) {
   phraseIndex = i;
-  renderPhrases();
+  updatePhraseContent();
+}
+
+/** 朗读当前短语英文 */
+function speakPhraseEn() {
+  const p = shuffledPhrases[phraseIndex] || shuffledPhrases[0];
+  speakSentence(p.en);
 }
 
 // ====== TTS 语音试听 ======
@@ -1691,32 +1870,49 @@ function playTestVoice(idx) {
 
 // ====== 底部导航 ======
 function bottomNav(active) {
-  const items = [
-    { id: 'roots', icon: '🧩', label: '词根词缀' },
-    { id: 'plan', icon: '🎯', label: '学习计划' },
-    { id: 'wordbook', icon: '📖', label: '单词本' },
-    { id: 'stats', icon: '📊', label: '学习统计' },
-    { id: 'mistakes', icon: '📝', label: '错词本' },
-    { id: 'phrases', icon: '✨', label: '生活短语' },
-  ];
+  const showHome = active !== 'home';
+  if (!showHome) return '';
   return `
     <div class="bottom-nav">
-      ${items.map(i => {
-        const action = i.id === 'learn' ? "App.startLearn()" : `App.nav('${i.id}')`;
-        return `
-        <div class="nav-item ${active === i.id ? 'active' : ''}" onclick="${action}">
-          <div class="icon">${i.icon}</div>
-          <div class="label">${i.label}</div>
-        </div>
-      `;
-      }).join('')}
+      <div class="nav-item active" onclick="App.goHome()" style="flex:0 0 auto; min-width:80px;">
+        <div class="icon">🏠</div>
+        <div class="label">首页</div>
+      </div>
     </div>
   `;
 }
 
 // ====== 工具 ======
 function applyTheme() {
+  // 界面风格：classic（经典蓝色扁平）或 playful（趣味橙色圆润）
+  document.body.classList.remove('theme-classic', 'theme-playful');
+  document.body.classList.add(settings.theme === 'playful' ? 'theme-playful' : 'theme-classic');
+  // 深色模式（与界面风格叠加）
   document.body.classList.toggle('dark', settings.dark);
+  // 动态设置 Android 状态栏颜色（延迟一帧确保 CSS 变量已生效）
+  requestAnimationFrame(() => updateStatusBarColor());
+}
+
+/** 根据当前主题动态更新 Android 状态栏颜色 */
+function updateStatusBarColor() {
+  if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.StatusBar) return;
+  // 从 body 获取当前主题的实际背景色（主题变量定义在 body 上）
+  const bgColor = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  if (!bgColor) return;
+  // 浅色背景用深色图标，深色背景用浅色图标
+  const darkIcons = !settings.dark;
+  window.Capacitor.Plugins.StatusBar.setColor({
+    color: bgColor,
+    darkIcons: darkIcons
+  }).catch(() => {});
+}
+
+/** 切换界面风格 */
+function setTheme(v) {
+  settings.theme = (v === 'playful') ? 'playful' : 'classic';
+  saveSettings(settings);
+  applyTheme();
+  renderSettings();
 }
 
 function setNewPerDay(v) {
@@ -1772,6 +1968,7 @@ function setRemindTime(v) {
 window.App = {
   nav: navigate,
   goBack,
+  goHome,
   startLearn,
   toggleMeaning,
   answer,
@@ -1788,6 +1985,7 @@ window.App = {
   reshuffleWords,
   setNewPerDay,
   setLearnMode,
+  setTheme,
   setExamDate,
   toggleSetting,
   toggleRemind,
@@ -1805,6 +2003,7 @@ window.App = {
   nextPhrase,
   prevPhrase,
   setPhraseIndex,
+  speakPhraseEn,
   refreshVoices,
   playTestVoice,
   playOnlineVoice,
@@ -1812,6 +2011,14 @@ window.App = {
   resetOnlineVoice,
   setRootFilter,
   toggleRootDetail,
+  calPrevMonth: () => {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+    renderStats();
+  },
+  calNextMonth: () => {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+    renderStats();
+  },
 };
 
 // ====== 启动 ======

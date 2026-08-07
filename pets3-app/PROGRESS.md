@@ -162,6 +162,97 @@ pets3-app/
 - 底部浮动导航按钮和圆点指示器，毛玻璃效果
 - 顶部浮动后退/关闭按钮，计数器
 
+## 第四轮 6 项需求完成状态
+
+### 需求 1: 多页面顶部标题居中
+- **状态: 已完成**
+- `.topbar .title` 改为绝对定位居中（`position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%)`）
+- 无论左右两侧是否有按钮，标题始终水平垂直居中
+- 同时增加 topbar padding 至 `14px 16px 8px` + `calc(14px + env(safe-area-inset-top))`，避免内容过于贴顶
+
+### 需求 2: APK 沉浸式状态栏（非全屏隐藏）
+- **状态: 已完成**
+- **方案**: 沉浸式状态栏——状态栏背景与 app 同色融为一体，图标仍显示，内容在状态栏下方
+- 新建 [colors.xml](android/app/src/main/res/values/colors.xml)，定义 `appBackground = #f5f6f8`（与 CSS `--bg` 一致）
+- [styles.xml](android/app/src/main/res/values/styles.xml) 的 `AppTheme.NoActionBar` 添加：
+  - `android:windowTranslucentStatus` = false
+  - `android:windowDrawsSystemBarBackgrounds` = true
+  - `android:statusBarColor` = @color/appBackground
+  - `android:navigationBarColor` = @color/appBackground
+  - `android:windowLayoutInDisplayCutoutMode` = shortEdges
+- style.css 的 `.topbar` 添加 `padding-top: calc(14px + env(safe-area-inset-top))` 自动避开状态栏
+- 需重新打包 APK 生效
+
+### 需求 3: 复习逻辑说明（SRS 间隔重复）
+- **状态: 已说明，无需修改**
+- 复习**不是**简单的"第二天复习前一天所有单词"
+- 使用 SRS 间隔重复算法（[srs.js](src/srs.js)），每个单词有独立复习时间表：
+  - 间隔阶梯：`1天 → 3天 → 7天 → 15天 → 30天 → 60天 → 90天 → 120天 → 180天 → 365天`
+  - **认识(good)**：间隔上升一阶
+  - **模糊(hard)**：原地踏步
+  - **忘记(again)**：间隔归零，10分钟后重学
+- 每天系统自动收集所有 `due` 到期的单词组成复习队列
+
+### 需求 4: 单词本随机按钮逻辑确认
+- **状态: 保留，逻辑合理**
+- `reshuffleWords()` 清除存储的打乱顺序 → 重新随机排列
+- 已学习单词状态存储在 `state.cards`（以单词为 key），与显示顺序无关
+- 打乱**不影响**已学单词进度，保留按钮
+
+### 需求 5: 生活短语页改造
+- **状态: 已完成**
+- 去掉了"搞笑/诗意/生活/励志"标签文字
+- 移除了底部圆点指示器组件
+- 左右导航按钮：去掉圆形背景，仅保留 `‹` `›` 箭头图标，增大到 40px，透明度 0.5
+- 按钮移到屏幕垂直居中位置
+- 英文从 26px 增大到 30px，中文从 15px 增大到 18px
+- 文字上下左右居中（`justify-content: center; align-items: center`）
+- 新增 8 秒自动滚动，到最后一条后循环回第一条
+- 切换优化：不再重建整个 DOM，只更新文字和背景内容；文字淡入淡出过渡（250ms）；图片预加载相邻 2-3 张
+
+### 需求 6: 首页标题增大 + 动态问候语
+- **状态: 已完成**
+- "我想背单词"作为顶部居中标题（28px 加粗）
+- 新增动态问候语，根据当前时间自动变化：
+  - 6-11点：早上好 👋
+  - 11-13点：中午好 👋
+  - 13-17点：下午好 👋
+  - 17-19点：傍晚好 👋
+  - 19-6点：晚上好 👋
+- 副标题"今天也是进步一点点的一天"
+- 恢复"公共英语三级 4544 词"词库信息行
+- 两个主题（classic/playful）均已同步：playful 主题的 `✦` 装饰符从 slogan 迁移到 greeting
+
+## 第五轮需求完成状态
+
+### 需求 1: 状态栏动态联动（方案 B）
+- **状态: 已完成**
+- **问题**: 状态栏图标看不清 + playful 风格状态栏颜色不跟随
+- **方案**: 创建 StatusBar 自定义 Capacitor 插件，实现前端主题切换时动态同步 Android 状态栏颜色
+- **实现细节**:
+  - 新建 [StatusBarPlugin.java](android/app/src/main/java/com/pets3/vocab/StatusBarPlugin.java)，实现 `setColor` 方法
+  - 修改 [MainActivity.java](android/app/src/main/java/com/pets3/vocab/MainActivity.java)，注册插件
+  - 修改 [main.js](src/main.js) 的 `applyTheme()` 函数，主题切换时调用 `updateStatusBarColor()`
+  - `updateStatusBarColor()` 从 `document.body` 获取实际背景色，配合 `requestAnimationFrame` 确保 CSS 变量已生效
+  - 四种主题自动映射图标明暗（浅色背景用深色图标，深色背景用浅色图标）
+
+### 需求 2: 生活短语自动滚动时间调整
+- **状态: 已完成**
+- 自动切换时间从 8 秒改为 15 秒（[main.js#L1560](src/main.js)）
+
+### 需求 3: 生活短语每天打乱一次顺序
+- **状态: 已完成**
+- 新增 `initShuffledPhrases()` 函数（[main.js#L70-L96](src/main.js)）
+- 使用日期作为缓存 key（`pets3_phrases_shuffle_YYYY-MM-DD`）
+- 同一天内顺序一致（从 localStorage 读取）
+- 第二天自动重新打乱
+- 自动清理旧日期的缓存
+
+### 需求 4: APK 输出位置固定
+- **状态: 已完成**
+- APK 固定复制到 `English-learn/pets3-app.apk`（根目录）
+- 删除 `pets3-app/pets3-app.apk` 冗余副本
+
 ## 关键代码位置索引
 
 | 功能 | 文件 | 行号 | 函数/变量名 |
@@ -321,3 +412,97 @@ pets3-app/
 ---
 
 **小贴士**：所有设置项均自动保存到本地（localStorage），关 App、重启手机都不会丢。卸载 App 才会清除，重要数据请定期手动备份。
+
+## 界面风格规范（双主题系统）
+
+> 项目支持两套可切换的界面风格，用户在「设置 → 界面风格」中自选，选择持久化到 `localStorage`。
+> 两套风格共享同一套 HTML 结构和 JS 逻辑，仅通过 CSS 变量和 body class 切换，互不干扰，可叠加深色模式。
+
+### 架构原理
+
+```
+用户选择 settings.theme
+        ↓
+applyTheme() 给 body 加 class
+        ↓
+┌─ theme-classic  → 使用 :root 默认变量（蓝色扁平）
+└─ theme-playful  → 使用 body.theme-playful 覆盖变量（橙色圆润）
+        ↓
+深色模式 settings.dark 叠加 body.dark → 进一步覆盖变量
+```
+
+**关键文件：**
+- [src/store.js](src/store.js) — 默认设置 `theme: 'classic'`
+- [src/main.js#applyTheme](src/main.js) — `applyTheme()` 和 `setTheme()` 函数
+- [src/style.css](src/style.css) — `:root`（经典）+ `body.theme-playful`（趣味）变量和组件样式
+
+### 经典主题（Classic）
+
+| 属性 | 值 |
+|------|-----|
+| 启用方式 | `body.theme-classic`（默认） |
+| 主色 | `#3b82f6`（蓝色） |
+| 背景 | `#f5f6f8`（浅灰） |
+| 卡片 | `#ffffff`（纯白） |
+| 圆角 | `14px` |
+| 阴影 | `0 2px 12px rgba(0,0,0,0.06)` |
+| 气质 | 专业、专注、扁平化 |
+| 适用场景 | 严肃学习、长时间使用 |
+
+**CSS 变量定义位置：** `:root`（style.css 第 2-17 行）
+
+### 趣味主题（Playful）
+
+| 属性 | 值 |
+|------|-----|
+| 启用方式 | `body.theme-playful` |
+| 主色 | `#ff8a4c`（橙色） |
+| 背景 | `#fff8f0`（暖白） |
+| 卡片 | `#ffffff`（纯白） |
+| 圆角 | `16px`（更圆润） |
+| 阴影 | `0 4px 12px rgba(255,138,76,0.12)`（带橙色色调） |
+| 气质 | 友好、温暖、活泼 |
+| 适用场景 | 轻松学习、降低焦虑 |
+| 设计参考 | vibe-hub.org/style-playful |
+
+**特色组件样式（仅 Playful 主题）：**
+- 统计卡片：三个彩色背景（橙/蓝/红），非统一白底
+- 今日卡片：橙色渐变 + 右上角装饰圆 + 内高光
+- 开始按钮：按压时 `translateY(2px)` + 阴影收缩（弹性反馈）
+- 快捷入口：图标有彩色圆角背景（6 种颜色）
+- 三态按钮：底部 4px 立体阴影，按压时下沉
+- 底部导航：顶部圆角 + 橙色色调阴影
+
+**CSS 位置：** style.css 末尾「趣味主题（Playful）」章节（约第 880 行起）
+
+### 深色模式叠加
+
+深色模式独立于界面风格，两者可任意组合（4 种状态）：
+
+| 组合 | body class | 效果 |
+|------|-----------|------|
+| 经典 + 亮色 | `theme-classic` | 蓝色扁平白底 |
+| 经典 + 暗色 | `theme-classic dark` | 蓝色扁平深底 |
+| 趣味 + 亮色 | `theme-playful` | 橙色圆润暖白底 |
+| 趣味 + 暗色 | `theme-playful dark` | 橙色圆润深紫底 |
+
+**深色模式变量覆盖位置：**
+- 经典：`body.dark`（style.css 第 296 行）
+- 趣味：`body.theme-playful.dark`（style.css 第 906 行）
+
+### 新增风格时的扩展指南
+
+若要新增第三套风格（如 Y2K 千禧风），按以下步骤：
+
+1. **store.js**：`theme` 字段值新增一个选项（如 `'y2k'`）
+2. **main.js applyTheme()**：在 class 切换逻辑中加新值
+3. **main.js 设置页**：下拉框加新选项
+4. **style.css**：新增 `body.theme-y2k { ... }` 变量块 + 组件增强样式
+5. **深色叠加**：新增 `body.theme-y2k.dark { ... }` 变量覆盖
+6. **本文档**：在上表补充新风格的属性说明
+
+**核心原则：**
+- 所有组件样式必须用 `var(--xxx)` 引用变量，不能硬编码颜色
+- 新风格只覆盖需要变化的变量，其余继承 `:root` 默认值
+- 组件增强用 `body.theme-xxx .component` 选择器，不修改原组件样式
+- 深色模式必须同时支持所有风格（写对应的 `.dark` 覆盖）

@@ -36,7 +36,7 @@ export function saveState(state) {
 
 /** 读设置 */
 export function loadSettings() {
-  const def = { newPerDay: 20, autoSpeak: true, showPhonetic: true, dark: false, sound: true, remind: false, remindTime: '20:00', learnMode: 'enzh', examDate: '', planEnabled: false, onlineVoice: '' };
+  const def = { newPerDay: 20, autoSpeak: true, showPhonetic: true, dark: false, sound: true, remind: false, remindTime: '20:00', learnMode: 'enzh', examDate: '', planEnabled: false, onlineVoice: '', theme: 'classic' };
   try {
     return { ...def, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}) };
   } catch { return def; }
