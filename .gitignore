@@ -7,7 +7,7 @@ node_modules/
 dist/
 build/
 www/
-*.apk
+# 注意：pets3-app.apk 需要保留供用户下载，不排除 *.apk
 *.aab
 *.aar
 *.ap_

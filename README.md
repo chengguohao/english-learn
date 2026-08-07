@@ -1,53 +1,101 @@
-# 墨词背单词（PETS-3 版）
+# 我想背单词
 
-仿「墨墨背单词」的公共英语三级（PETS-3）词汇学习 App。
+> 一个基于记忆曲线的公共英语三级（PETS-3）词汇学习 App，支持 Android APK 安装。
 
-## 功能
-- **记忆曲线引擎**：认识/模糊/忘记 三态 → 智能间隔复习（1/3/7/15/30/60/90 天递增）
-- **每日学习流**：N 个新词 + 到期待复习词
-- **单词卡片**：单词/音标/释义/例句/发音（点卡片翻释义）
-- **打卡统计**：连续天数、累计学词、记忆持久度、70 天学习日历热力图
-- **单词本**：全部 4544 词浏览/搜索（搜单词或释义）
-- **每日提醒**：定时本地通知（Android）
-- **深色模式**、每日新词数可调、自动发音开关
+## 📲 一键下载安装（小白也能用）
 
-## 词库
-公共英语三级（PETS-3）大纲词汇 **4544 词**，含美式/英式音标、词性、中文释义、双语例句。
-数据源：kajweb/dict（CET4 词库合并去重）——PETS-3 与四级词汇高度重合。
+### 第 1 步：下载 APK
 
-## 安装 APK
-- `pets3-app.apk` 为签名安装包（debug 签名，可直接安装）
-- 手机开启「允许安装未知来源应用」→ 传输 APK → 点击安装
-- 上架应用商店需重新用正式 keystore 签名
+1. 打开本仓库主页：https://github.com/chengguohao/english-learn
+2. 找到文件列表中的 `pets3-app.apk`（在仓库根目录）
+3. **点击文件名** → 进入文件详情页 → 点右上角 **「Download」按钮**（或「Download raw file」）
 
-## 本地开发
+> 也可直接访问下载链接：https://github.com/chengguohao/english-learn/raw/master/pets3-app.apk
+
+### 第 2 步：手机安装
+
+1. 把下载好的 `pets3-app.apk` 传到安卓手机（微信/QQ发送、USB 拷贝均可）
+2. 在手机上点击该 APK 文件
+3. 系统提示「出于安全考虑，禁止安装」→ 点「设置」→ 勾选「允许从此来源安装应用」
+4. 返回点「安装」→ 等待几秒 → 「打开」即可使用
+
+### 第 3 步：开始学习
+
+- 首次打开 App，点首页「开始学习」按钮
+- 进设置页（右上角 ⚙️）可切换学习模式、调整每日新词数、试听选择语音等
+- 学习进度自动保存在手机本地，下次打开继续
+
+> **不需要联网也能用**：词库内置、进度本地存储。仅「Edge 神经网络语音」需联网播放，断网时自动切换为系统本地语音。
+
+---
+
+## ✨ 功能特色
+
+- **记忆曲线引擎**：认识 / 模糊 / 忘记 三态反馈，智能调度复习间隔（1/3/7/15/30/60/90 天递增）
+- **三种学习模式**：英中看词回想、听音拼写、认识后拼写确认
+- **每日学习流**：自动组合新词 + 到期复习词，每日新词数 5~500 可调
+- **单词卡片**：单词 / 音标 / 释义 / 三类例句（日常 / 书面 / 职场）/ 词根词缀 / 扩展词族
+- **错词本专项复习**：自动收集答错的词，专项集中突破
+- **生活短语**：30 句精选英文短语，配精美照片背景，点读发音
+- **词根词缀**：按前缀 / 词根 / 后缀分组展示，构词法拆解记更牢
+- **学习统计**：连续打卡天数、累计学词、70 天日历热力图
+- **语音试听与选择**：6 种 Microsoft Edge 神经网络语音（Jenny/Aria/Guy/Ana/Sonia/Ryan），单词和句子都能播
+- **每日提醒**：定时本地通知（Android），再也不会忘打卡
+- **深色模式**：夜晚护眼，一键切换
+- **考试倒计时**：填考试日期，自动规划每日学习量
+
+## 📚 词库
+
+公共英语三级（PETS-3）大纲词汇 **4544 词**，含美式/英式音标、词性、中文释义、双语例句（每词 3 条，覆盖日常 / 书面 / 职场三种语境）。
+
+## 🛠️ 本地开发
+
 ```bash
 cd pets3-app
 npm install
-npm run dev        # 网页预览（PC/手机浏览器）
-npm run build      # 构建 www/
-npx cap sync android
-cd android && ./gradlew assembleDebug   # 或 gradlew.bat assembleDebug
+npm run dev                      # 网页预览（PC/手机浏览器）
+npm run android:build            # 一键构建 APK（构建 + 同步 + 打包）
 ```
 
-## 技术栈
-- 前端：Vanilla JS + Vite（单文件构建，离线可用）
-- 壳：Capacitor 6（Android WebView）
-- 数据：localStorage 本地持久化，无需联网
-- 发音：Android 原生 TTS / Web Speech API
+构建产物：`pets3-app/android/app/build/outputs/apk/debug/app-debug.apk`
 
-## 目录结构
+## 🧰 技术栈
+
+- **前端**：Vanilla JS + Vite（单文件构建，离线可用）
+- **壳**：Capacitor 6（Android WebView）
+- **数据**：localStorage 本地持久化，无需服务器
+- **发音**：Microsoft Edge TTS（在线神经网络语音）+ Android 原生 TTS / Web Speech API（离线兜底）
+
+## 📁 目录结构
+
 ```
-pets3-app/
-  src/            # 前端源码
-    main.js       # 主应用（UI + 交互）
-    srs.js        # 记忆曲线算法
-    store.js      # 数据持久化
-    tts.js        # 发音
-    notify.js     # 本地通知
-    style.css     # 样式
-    words-data.js # 词库数据（构建时生成）
-  android/        # Android 原生工程（Capacitor 生成）
-  www/            # 构建产物
-wordlists/        # 原始词库 + 合并脚本
+english-learn/
+├── pets3-app.apk              # ← 直接下载这个安装到手机
+├── README.md                  # 本说明文件
+├── pets3-app/                 # 应用源码
+│   ├── src/                   # 前端源码
+│   │   ├── main.js            # 主应用（UI + 交互）
+│   │   ├── srs.js             # 记忆曲线算法
+│   │   ├── store.js           # 数据持久化
+│   │   ├── tts.js             # 发音（Edge TTS + 本地）
+│   │   ├── notify.js          # 本地通知
+│   │   ├── style.css          # 样式
+│   │   ├── words-data.js      # 词库数据（4544 词）
+│   │   ├── roots-data.js      # 词根词缀数据
+│   │   └── phrases-data.js    # 生活短语数据
+│   ├── android/               # Android 原生工程
+│   ├── www/                   # 构建产物（gitignore）
+│   └── PROGRESS.md            # 项目进度文档（含设置功能详解）
+└── wordlists/                 # 原始词库 + 合并脚本
 ```
+
+## 📝 使用说明
+
+详细的功能介绍和操作步骤请参阅 [pets3-app/PROGRESS.md](pets3-app/PROGRESS.md) 中的「设置功能详解」章节。
+
+## ⚠️ 注意事项
+
+- APK 使用 debug 签名，可直接安装自用；上架应用商店需重新用正式 keystore 签名
+- 学习进度存储在应用私有目录，卸载 App 会清除数据
+- 部分国产 ROM 的「清理加速」可能清除 WebView 数据，建议把 App 加入清理白名单
+- 仅供个人学习使用
