@@ -38,4 +38,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 每日提醒所需通知权限（Android 13+ 必须声明） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 精确闹钟调度（Android 12+ 保证提醒准时触发） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <!-- 防止设备休眠错过提醒 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 开机自启（确保重启后提醒仍生效） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 </manifest>
