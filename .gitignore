@@ -1,0 +1,48 @@
+# ===== 依赖 =====
+node_modules/
+.pnp
+.pnp.js
+
+# ===== 构建产物 =====
+dist/
+build/
+www/
+*.apk
+*.aab
+*.aar
+*.ap_
+
+# ===== Android 构建缓存 =====
+android/.gradle/
+android/app/build/
+android/capacitor/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/capacitor.settings.gradle
+
+# Capacitor 生成文件（cap sync 会重新生成）
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 日志和临时文件 =====
+*.log
+tmp_*.txt
+*.b64
+*.tmp
+
+# ===== 签名和密钥 =====
+*.keystore
+*.jks
+debug.keystore

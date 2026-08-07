@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">我想背单词</string>
+    <string name="title_activity_main">我想背单词</string>
+    <string name="package_name">com.pets3.vocab</string>
+    <string name="custom_url_scheme">com.pets3.vocab</string>
+</resources>

@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<div id="app"></div>
+<script type="module">
+import '/src/main.js';
+// 等待 app 初始化完成
+setTimeout(() => {
+  try {
+    window.App.startLearn();
+    setTimeout(() => {
+      const html = document.getElementById('app').innerHTML;
+      const wordMatch = html.match(/class="word">([^<]+)<\/div>/);
+      const hasButtons = html.includes('btn-again') && html.includes('btn-hard') && html.includes('btn-good');
+      const hasSpeaker = html.includes('speaker');
+      const result = {
+        word: wordMatch ? wordMatch[1] : 'UNDEFINED!',
+        hasButtons,
+        hasSpeaker,
+        hasMeaning: html.includes('meaning'),
+      };
+      document.body.setAttribute('data-result', JSON.stringify(result));
+      document.body.textContent = 'RESULT: ' + JSON.stringify(result);
+    }, 1200);
+  } catch(e) {
+    document.body.textContent = 'ERROR: ' + e.message;
+  }
+}, 600);
+</script></body></html>
