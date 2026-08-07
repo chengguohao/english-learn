@@ -1739,17 +1739,27 @@ function toggleSetting(key) {
 
 async function toggleRemind() {
   const next = !settings.remind;
-  if (next) {
-    const ok = await ensurePermission();
-    if (!ok) {
-      alert('每日提醒仅在 Android App 中可用，且需要通知权限');
-      return;
-    }
-  }
+  // 先立即切换 UI，避免 async 等待时开关卡死无反应
   settings.remind = next;
   saveSettings(settings);
-  await setDailyReminder(settings.remind, settings.remindTime);
   renderSettings();
+  try {
+    if (next) {
+      const ok = await ensurePermission();
+      if (!ok) {
+        // 权限失败：回滚开关并提示
+        settings.remind = false;
+        saveSettings(settings);
+        renderSettings();
+        alert('无法启用每日提醒：\n1. 请确保已升级到最新版 APK\n2. 请到系统设置 → 应用 → 我想背单词 → 通知，开启通知权限');
+        return;
+      }
+    }
+    await setDailyReminder(settings.remind, settings.remindTime);
+  } catch (e) {
+    console.warn('toggleRemind error', e);
+    // 出错也保持开关状态，下次进入再重试
+  }
 }
 
 function setRemindTime(v) {

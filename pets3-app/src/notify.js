@@ -1,18 +1,25 @@
 /**
  * 每日学习提醒（Android 本地通知）
  * 用 Capacitor Local Notifications 实现
+ *
+ * 注意：不使用动态 import('@capacitor/local-notifications')，
+ * 因为 vite-plugin-singlefile + inlineDynamicImports 打包后
+ * 在 Android WebView 中无法正确解析。
+ * 改用 Capacitor 官方推荐的 window.Capacitor.Plugins 直接访问。
  */
 
-async function getPlugin() {
+/** 获取 LocalNotifications 插件实例（仅原生平台可用） */
+function getPlugin() {
   try {
-    // LocalNotifications 仅在原生平台（Android/iOS）实现；Web 端调用会抛
-    // "not implemented on web"，故先判断平台，Web 上直接返回 null。
     const cap = window.Capacitor;
-    if (!cap || typeof cap.isNativePlatform !== 'function' || !cap.isNativePlatform()) {
-      return null;
+    if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) {
+      return null; // Web 端不可用
     }
-    const mod = await import('@capacitor/local-notifications');
-    return mod.LocalNotifications;
+    // 优先从 Capacitor.Plugins 取（原生注入）
+    if (cap.Plugins && cap.Plugins.LocalNotifications) {
+      return cap.Plugins.LocalNotifications;
+    }
+    return null;
   } catch (e) {
     return null;
   }
@@ -20,7 +27,7 @@ async function getPlugin() {
 
 /** 检查通知权限并请求 */
 export async function ensurePermission() {
-  const p = await getPlugin();
+  const p = getPlugin();
   if (!p) return false;
   try {
     const perm = await p.checkPermissions();
@@ -30,6 +37,7 @@ export async function ensurePermission() {
     }
     return true;
   } catch (e) {
+    console.warn('checkPermission error', e);
     return false;
   }
 }
@@ -40,7 +48,7 @@ export async function ensurePermission() {
  * @param {string} time 'HH:mm' 格式
  */
 export async function setDailyReminder(enabled, time = '20:00') {
-  const p = await getPlugin();
+  const p = getPlugin();
   if (!p) return false;
   try {
     await p.cancel({ notifications: [{ id: 1001 }] });
